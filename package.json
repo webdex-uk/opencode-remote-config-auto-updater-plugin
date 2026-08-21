@@ -1,0 +1,19 @@
+{
+  "name": "opencode-remote-config-auto-updater-plugin",
+  "version": "0.1.0",
+  "description": "opencode plugin that pulls the main branch of OPENCODE_CONFIG_DIR on startup",
+  "type": "module",
+  "main": "plugin.js",
+  "exports": {
+    ".": "./plugin.js"
+  },
+  "files": [
+    "plugin.js"
+  ],
+  "license": "Apache-2.0",
+  "keywords": [
+    "opencode",
+    "opencode-plugin"
+  ],
+  "dependencies": {}
+}
