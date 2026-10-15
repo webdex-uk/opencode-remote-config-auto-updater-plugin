@@ -1,18 +1,45 @@
 import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /**
- * opencode plugin that pulls the latest `main` of the directory pointed to by
- * `OPENCODE_CONFIG_DIR` on startup. Best effort: it never throws and never
- * blocks startup; it silently skips when the env var is unset/empty or the
- * directory is not a git work tree (including bare repositories and paths
- * inside a repo's .git directory).
+ * Dual V1/V2 opencode plugin entrypoint that pulls the latest `main` of the opencode
+ * config repository on startup.
  *
- * @returns {Promise<object>} Empty hooks object (nothing to register).
+ * - V1 (>= 1.18.29) calls `server`: uses `OPENCODE_CONFIG_DIR` only, exactly like
+ *   v0.1.0 — when that variable is unset or empty, the plugin skips silently.
+ * - V2 calls `setup`: same logic, but when `OPENCODE_CONFIG_DIR` is unset or empty it
+ *   falls back to the standard config directory `~/.config/opencode`.
+ *
+ * Both halves are best effort: they never throw and never block startup; they silently
+ * skip when the directory is not a git work tree (including bare repositories and paths
+ * inside a repo's .git directory).
  */
-export default async function remoteConfigAutoUpdater() {
-  const configDir = process.env.OPENCODE_CONFIG_DIR;
+
+/**
+ * Resolve the config directory to pull.
+ *
+ * @param {boolean} [useFallback] When true and `OPENCODE_CONFIG_DIR` is unset or empty,
+ *   fall back to the standard config directory `~/.config/opencode`.
+ * @returns {string|undefined} The config directory to pull, if any.
+ */
+function resolveConfigDir(useFallback = false) {
+  const fromEnv = process.env.OPENCODE_CONFIG_DIR;
+  if (fromEnv || !useFallback) {
+    return fromEnv;
+  }
+  return join(homedir(), ".config", "opencode");
+}
+
+/**
+ * Best-effort `git pull origin main` on `configDir`: never throws, never blocks startup,
+ * skips non-repo deployments and unset paths.
+ *
+ * @param {string|undefined} configDir
+ */
+function pullConfigRepo(configDir) {
   if (!configDir) {
-    return {};
+    return;
   }
 
   try {
@@ -30,7 +57,7 @@ export default async function remoteConfigAutoUpdater() {
       isRepo.status !== 0 ||
       isRepo.stdout.trim() !== "true"
     ) {
-      return {};
+      return;
     }
 
     const pull = spawnSync("git", ["-C", configDir, "pull", "origin", "main"], {
@@ -49,6 +76,17 @@ export default async function remoteConfigAutoUpdater() {
   } catch (error) {
     console.warn(`[opencode-remote-config-updater] skipped: ${error.message}`);
   }
-
-  return {};
 }
+
+// V1 half — exact v0.1.0 behavior: env var only, returns an empty hooks map.
+const server = async () => {
+  pullConfigRepo(resolveConfigDir(false));
+  return {};
+};
+
+// V2 half — env var, else the standard config dir; still skipped when not a git work tree.
+const setup = async () => {
+  pullConfigRepo(resolveConfigDir(true));
+};
+
+export default { id: "config-auto-updater", server, setup };
